@@ -12,12 +12,24 @@
 #   in the root directory of this software project.
 ################################################################################################
 
+# Text colour variables
+RED := $(shell tput -Txterm setaf 1)
+GREEN := $(shell tput -Txterm setaf 2)
+BLUE := $(shell tput -Txterm setaf 4)
+CYAN := $(shell tput -Txterm setaf 6)
+WHITE := $(shell tput -Txterm setaf 7)
+RESET := $(shell tput -Txterm sgr0)
+
 # Absolute path
 ROOT_DIR :=$(realpath $(shell dirname $(firstword $(MAKEFILE_LIST))))
 
 EXCLUDED_DIRS := $(addprefix $(ROOT_DIR)/,Core/STM32F303x8)
 
 RECOMPILED_FILES :=
+
+LOG_FILE = ./build.log
+
+BUILD_OK := False
 
 ################################## ↓ Source and header files ↓ #################################
 SOURCES := 
@@ -44,6 +56,8 @@ OPT = -Og
 
 # CPPCHECK
 CPPCHECK = cppcheck
+EXIT_CODE := 0
+RESULT_FILE := cppcheck_results.xml
 
 # C FLAGS
 CPU = -mcpu=cortex-m4

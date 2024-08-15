@@ -43,124 +43,163 @@ vpath %.s $(sort $(dir $(ASM_SOURCES)))
 EXCLUDE_OPTS := $(foreach dir,$(EXCLUDED_DIRS),-path $(dir) -prune -o)
 
 HEADERS_WITH_DIR :=$(shell \
-    find $(ROOT_DIR) $(EXCLUDE_OPTS) \
-    -type f -name "*.h" -print)
+	find $(ROOT_DIR) $(EXCLUDE_OPTS) \
+	-type f -name "*.h" -print)
 
 HEADERS_CPPCHECK := $(subst -I,,$(INCLUDES))
 
 ########################################### ↓ Rules ↓ ##########################################
 # Create an object file from soruce files
 $(BUILD_DIR)/%.o: %.c $(HEADERS_WITH_DIR)| $(BUILD_DIR)
-	$(CC) -c $(CFLAGS) -Wa,-a,-ad,-alms=$(BUILD_DIR)/$(notdir $(<:.c=.lst)) $< -o $@
+	-$(CC) -c $(CFLAGS) -Wa,-a,-ad,-alms=$(BUILD_DIR)/$(notdir $(<:.c=.lst)) $< -o $@ 2>> $(LOG_FILE)
 	@$(eval RECOMPILED_FILES := $(RECOMPILED_FILES) $<)
 
 # Create an object file from ASM files
 $(BUILD_DIR)/%.o: %.s Makefile | $(BUILD_DIR)
-	$(AS) -c $(CFLAGS) $< -o $@
+	-$(AS) -c $(CFLAGS) $< -o $@
 
 # Build .elf file
 $(BUILD_DIR)/$(TARGET).elf: $(OBJECTS) Makefile
-	$(CC) $(OBJECTS) $(LDFLAGS) -o $@
-	$(SZ) $@
+	-$(CC) $(OBJECTS) $(LDFLAGS) -o $@
+	-$(SZ) $@
 
 # Build .hex file from .elf
 $(BUILD_DIR)/%.hex: $(BUILD_DIR)/%.elf | $(BUILD_DIR)
-	$(HEX) $< $@
+	-$(HEX) $< $@
 
 # Build .bin file from .elf
 $(BUILD_DIR)/%.bin: $(BUILD_DIR)/%.elf | $(BUILD_DIR)
-	$(BIN) $< $@	
+	-$(BIN) $< $@	
 
 $(BUILD_DIR):
 	mkdir $@
 
+set-build-ok:
+	$(eval BUILD_OK := True)
+
 # Headers
 print_compilation_start: 
 	@echo
-	@echo	'############################    START COMPILATION    ############################'
-	@echo
+	@echo	'$(CYAN)############################    START COMPILATION    ############################$(RESET)'
 
 print_clean_start: 
 	@echo
-	@echo	'###############################    CLEAN BUILD    ###############################'
-	@echo
+	@echo	'$(CYAN)###############################    CLEAN BUILD    ###############################$(RESET)'
 
 print_flash_start: 
 	@echo
-	@echo	'##########################   FLASHING PROSESS START    ##########################'
-	@echo
+	@echo	'$(CYAN)##########################   FLASHING PROCESS START    ##########################$(RESET)'
 
 print_cppcheck_start:
 	@echo
-	@echo	'#############################    STATIC ANALISIS    #############################'
-	@echo
+	@echo	'$(CYAN)#############################    STATIC ANALISIS    #############################$(RESET)'
 
 ######################################### ↓  Main Rules ↓ #######################################
 # Deletion of compilation files
 clean-App clean-DebugApp: print_clean_start
 	-rm -fR $(BUILD_DIR)
 
+# Deletion of compilation log file
+clean-log-file:
+	@rm -f ./*.log
+
 # Application compilation without and with debugging information
-App DebugApp: print_compilation_start $(BUILD_DIR)/$(TARGET).elf $(BUILD_DIR)/$(TARGET).bin
+App DebugApp: clean-log-file print_compilation_start $(BUILD_DIR)/$(TARGET).elf $(BUILD_DIR)/$(TARGET).bin
 #	Check and print information on which files have been compiled/recompiled
 	@if [ -z "$(RECOMPILED_FILES)" ]; then \
-		echo 'All files are up to date'; \
+		echo "$(GREEN)All files are up to date$(RESET)"; \
 	else \
-		echo	'---------------------------------------------------------------------------------'; \
-		echo 'Compiled files:'; \
+		echo ""; \
+		echo "$(BLUE)Compiled files:$(RESET)"; \
+		echo "$(BLUE)---------------------------------------------------------------------------------$(RESET)"; \
 		$(foreach file,$(RECOMPILED_FILES), echo "                  $(file)";) \
-		echo	'---------------------------------------------------------------------------------'; \
-	fi
-
+		echo "$(BLUE)---------------------------------------------------------------------------------$(RESET)"; \
+	fi;
+#	Compilation report
+	@if [ -s "$(LOG_FILE)" ]; then \
+		echo ""; \
+		echo "$(RED)Compilation: FAIL $(RESET)"; \
+		echo "$(RED)---------------------------------------------------------------------------------$(RESET)"; \
+		cat $(LOG_FILE); \
+		echo "$(RED)---------------------------------------------------------------------------------$(RESET)"; \
+		ERROR_COUNT=$$(grep -i "error" $(LOG_FILE) | wc -l); \
+		echo "$(RED)Number of issues found: $$ERROR_COUNT$(RESET)"; \
+	else \
+		echo "$(GREEN)Compilation: SUCCESS$(RESET)"; \
+		$(eval BUILD_OK := True) \
+	fi;
+	
 # Flash application without debugging information
-App-flash: clean-App App flash-process reset 
+App-flash: clean-App App 
+ifeq ($(BUILD_OK), true)
+    flash-process reset
+endif
 
 # Flash application with debugging information
-flash-debug: clean-debug debug flash-process reset
+flash-debug: clean-DebugApp debug
+ifeq ($(BUILD_OK), true)
+    flash-process reset
+endif
 
 # Flash process
 flash-process: print_flash_start
-	openocd \
-	-f interface/stlink.cfg -f target/stm32f3x.cfg \
-	-c "init" -c "reset halt" \
-	-c "flash write_image erase $(BUILD_DIR)/$(TARGET).bin 0x08000000" \
-	-c "verify_image $(BUILD_DIR)/$(TARGET).bin" -c "reset" -c "shutdown"
+	@echo "$(BLUE)Microcontroller flashing...$(RESET)"
+	@echo "$(BLUE)---------------------------------------------------------------------------------$(RESET)";
+	@if openocd -f interface/stlink.cfg -f target/stm32f3x.cfg \
+		-c "init" -c "reset halt" \
+		-c "flash write_image erase $(BUILD_DIR)/$(TARGET).bin 0x08000000" \
+		-c "verify_image $(BUILD_DIR)/$(TARGET).bin" -c "reset" -c "shutdown"; then \
+		echo "$(BLUE)---------------------------------------------------------------------------------$(RESET)"; \
+		echo "$(GREEN)Microcontroller flashing: SUCCESS$(RESET)"; \
+	else \
+		echo "$(RED)Microcontroller flashing: FAIL$(RESET)"; \
+	fi
 
 # Microcontroller reset
 reset:
-	openocd \
-	-f interface/stlink.cfg -f target/stm32f3x.cfg \
-	-c "init" -c "reset" -c "shutdown"
+	@echo "";
+	@echo "$(BLUE)Microcontroller reset...$(RESET)"
+	@echo "$(BLUE)---------------------------------------------------------------------------------$(RESET)";
+	@if openocd -f interface/stlink.cfg -f target/stm32f3x.cfg \
+		-c "init" -c "reset" -c "shutdown"; then \
+		echo "$(BLUE)---------------------------------------------------------------------------------$(RESET)"; \
+		echo "$(GREEN)Microcontroller reset: SUCCESS$(RESET)"; \
+	else \
+		echo "$(RED)Microcontroller reset: FAIL$(RESET)"; \
+	fi
 
 static-analisis: cppcheck-process
 
 # Static analysis using cppcheck 
 cppcheck-process: print_cppcheck_start
 	@if [ -z "$(HEADERS_CPPCHECK)" ]; then \
-	    echo "Error: HEADERS_CPPCHECK is empty"; \
-	    exit 1; \
+	    echo "$(RED)Error: HEADERS_CPPCHECK is empty$(RESET)"; \
 	fi
 
 	@RESULT_FILE=$$(mktemp /tmp/cppcheck_result.XXXXXX); \
 	$(CPPCHECK) \
-	--platform=win64 \
-	--force \
-	--quiet \
-	--enable=all \
-	--error-exitcode=1 \
-	--inline-suppr \
-	--suppress=missingIncludeSystem \
-	$(foreach dir,$(HEADERS_CPPCHECK),-I $(dir)) \
-	$(SOURCES) 2> $$RESULT_FILE; \
+		--platform=win64 \
+		--force \
+		--quiet \
+		--enable=all \
+		--error-exitcode=1 \
+		--inline-suppr \
+		--suppress=missingIncludeSystem \
+		$(foreach dir,$(HEADERS_CPPCHECK),-I $(dir)) \
+		$(SOURCES) 2> $$RESULT_FILE; \
 	EXIT_CODE=$$?; \
-	\
-	if [ $$EXIT_CODE -eq 0 ]; then \
-	    echo "Cppcheck: No issues found."; \
+	if [ "$$EXIT_CODE" -eq 0 ]; then \
+	    echo "$(GREEN)Cppcheck: SUCCESS$(RESET)"; \
 	else \
-	    echo "Cppcheck: Issues found."; \
-		cat $$RESULT_FILE; \
-		ERROR_COUNT=$$(grep -E 'error:|style:' $$RESULT_FILE | sort | uniq | wc -l); \
-	    echo "Number of issues found: $$ERROR_COUNT"; \
+	    echo "$(RED)Cppcheck: FAIL$(RESET)"; \
+		echo "$(RED)---------------------------------------------------------------------------------$(RESET)"; \
+		if [ -f $$RESULT_FILE ]; then \
+			cat $$RESULT_FILE; \
+			ERROR_COUNT=$$(grep -E 'error:|style:' $$RESULT_FILE | sort | uniq | wc -l); \
+			echo "$(RED)Number of issues found: $$ERROR_COUNT$(RESET)"; \
+		else \
+			echo "$(RED)Result file not found or empty$(RESET)"; \
+		fi; \
+		echo "$(RED)---------------------------------------------------------------------------------$(RESET)"; \
 	fi; \
-	
-	@rm -f $$RESULT_FILE
+	rm -f $$RESULT_FILE
