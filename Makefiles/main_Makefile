@@ -1,5 +1,5 @@
 ################################################################################################
-#   File           : config_Makefile
+#   File           : main_Makefile
 #   Brief          : This file contains simple system for software building
 #					 with flashing process for SMT32F3 microcontroller
 #					 along with static analisis.
@@ -33,8 +33,8 @@ CFLAGS += -g -gdwarf-2
 endif
 
 # List of C objects files
-OBJECTS = $(addprefix $(BUILD_DIR)/,$(notdir $(C_SOURCES:.c=.o)))
-vpath %.c $(sort $(dir $(C_SOURCES)))
+OBJECTS = $(addprefix $(BUILD_DIR)/,$(notdir $(SOURCES:.c=.o)))
+vpath %.c $(sort $(dir $(SOURCES)))
 
 # List of ASM objects files
 OBJECTS += $(addprefix $(BUILD_DIR)/,$(notdir $(ASM_SOURCES:.s=.o)))
@@ -42,8 +42,9 @@ vpath %.s $(sort $(dir $(ASM_SOURCES)))
 
 ########################################### ↓ Rules ↓ ##########################################
 # Create an object file from soruce files
-$(BUILD_DIR)/%.o: %.c Makefile | $(BUILD_DIR) 
+$(BUILD_DIR)/%.o: %.c | $(BUILD_DIR)
 	$(CC) -c $(CFLAGS) -Wa,-a,-ad,-alms=$(BUILD_DIR)/$(notdir $(<:.c=.lst)) $< -o $@
+	@$(eval RECOMPILED_FILES := $(RECOMPILED_FILES) $<)
 
 # Create an object file from ASM files
 $(BUILD_DIR)/%.o: %.s Makefile | $(BUILD_DIR)
@@ -68,28 +69,40 @@ $(BUILD_DIR):
 # Headers
 print_compilation_start: 
 	@echo
-	@echo	  '############################    START COMPILATION    ############################'
+	@echo	'############################    START COMPILATION    ############################'
+	@echo
 
 print_clean_start: 
 	@echo
-	@echo	  '###############################    CLEAN BUILD    ###############################'
+	@echo	'###############################    CLEAN BUILD    ###############################'
+	@echo
 
 print_flash_start: 
 	@echo
-	@echo	  '##########################   FLASHING PROSESS START    ##########################'
+	@echo	'##########################   FLASHING PROSESS START    ##########################'
+	@echo
 
 print_cppcheck_start:
 	@echo
-	@echo	  '#############################    STATIC ANALISIS    #############################'
+	@echo	'#############################    STATIC ANALISIS    #############################'
+	@echo
 
 ######################################### ↓  Main Rules ↓ #######################################
-
 # Deletion of compilation files
 clean-App clean-DebugApp: print_clean_start
 	-rm -fR $(BUILD_DIR)
 
 # Application compilation without and with debugging information
 App DebugApp: print_compilation_start $(BUILD_DIR)/$(TARGET).elf $(BUILD_DIR)/$(TARGET).bin
+#	Check and print information on which files have been compiled/recompiled
+	@if [ -z "$(RECOMPILED_FILES)" ]; then \
+		echo 'All files are up to date'; \
+	else \
+		echo	'---------------------------------------------------------------------------------'; \
+		echo 'Compiled files:'; \
+		$(foreach file,$(RECOMPILED_FILES), echo "                  $(file)";) \
+		echo	'---------------------------------------------------------------------------------'; \
+	fi
 
 # Flash application without debugging information
 App-flash: clean-App App flash-process reset 
@@ -127,4 +140,4 @@ cppcheck-process: print_cppcheck_start
 	--suppress=missingIncludeSystem \
 	-I '$(ROOT_DIR)/Core/STM32F303x8' \
 	-I '$(ROOT_DIR)/Core/Inc' \
-	$(C_SOURCES)
+	$(SOURCES)

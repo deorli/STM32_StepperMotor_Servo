@@ -1,6 +1,7 @@
-C_INCLUDES += -ICore/Inc
-C_INCLUDES += -ICore/STM32F303x8/
+INCLUDES += -ICore/Inc
+INCLUDES += -ICore/STM32F303x8/
 
-C_SOURCES += Core/Src/main.c
+SOURCES += Core/Src/main.c
+SOURCES += Core/Src/cos.c
 
 ASM_SOURCES += Core/Startup/startup_stm32f303x8.s

@@ -1,5 +1,6 @@
 // Test code for blinking LED
 #include "stm32f303x8.h"
+#include "main.h"
 
 // Simple timer function - written to get just a delay - don't count time correctly
 void delay1(uint16_t time_ns){

@@ -13,8 +13,28 @@
 ################################################################################################
 
 # Absolute path
-ROOT_DIR:=$(realpath $(shell dirname $(firstword $(MAKEFILE_LIST))))
+ROOT_DIR :=$(realpath $(shell dirname $(firstword $(MAKEFILE_LIST))))
 
+RECOMPILED_FILES :=
+
+################################## ↓ Source and header files ↓ #################################
+SOURCES := 
+INCLUDES := 
+HEADERS := Core/Inc/stm32f3x8.h
+
+ASM_SOURCES :=
+ASM_INCLUDES :=
+
+# AS includes
+EXTERNAL_INCLUDE_DIRS = \
+'C:\Program Files (x86)\GNU Arm Embedded Toolchain\10 2021.10\arm-none-eabi\include'
+
+########################################## ↓ Defines ↓ #########################################
+C_DEFS = 
+
+AS_DEFS =
+
+####################################### ↓ Compile flags ↓ ######################################
 # Optimization
 OPT = -Og
 
@@ -30,29 +50,12 @@ FLOAT-ABI = -mfloat-abi=hard
 
 MCU = $(CPU) -mthumb $(FPU) $(FLOAT-ABI)
 
-########################################## ↓ Defines ↓ #########################################
-C_DEFS = 
-
-AS_DEFS =
-
-################################## ↓ Source and header files ↓ #################################
-C_SOURCES := 
-C_INCLUDES := 
-
-ASM_SOURCES :=
-ASM_INCLUDES :=
-
-# AS includes
-EXTERNAL_INCLUDE_DIRS = \
-'C:\Program Files (x86)\GNU Arm Embedded Toolchain\10 2021.10\arm-none-eabi\include'
-
-####################################### ↓ Compile flags ↓ ######################################
-ASFLAGS = $(MCU) $(AS_DEFS) $(ASM_INCLUDES) $(OPT) -Wall -fdata-sections -ffunction-sections
-
-CFLAGS = $(MCU) $(C_DEFS) $(C_INCLUDES) $(OPT) -Wall -g -fdata-sections -ffunction-sections
+CFLAGS = $(MCU) $(C_DEFS) $(INCLUDES) -I $(OPT) -Wall -Wextra -g -fdata-sections -ffunction-sections
 
 # Generate dependency information
 CFLAGS += -MMD -MP -MF"$(@:%.o=%.d)"
+
+ASFLAGS = $(MCU) $(AS_DEFS) $(ASM_INCLUDES) $(OPT) -Wall -fdata-sections -ffunction-sections
 
 # LD Flags
 LIBS = -lc -lm -lnosys 
