@@ -44,10 +44,10 @@ help:
 	@echo	  5. make clean-App  \ \ \ \ \ \ \ \ -Remove build Folder
 	@echo	  6. make clean-DebugApp  \ \ \ -Remove build Debug Folder
 	@echo	  -------------------------------------------------------------------------------------------------------------------
-	@echo	  7. make cppcheck  \ \ \ \ \ \ \ \ \ -Run static analisis
+	@echo	  7. make static-analisis  \ \ -Run static analisis
 	@echo	  '###################################################################################################################'
 
 # Include makefile for debugging and flashing STM32F3
-ifeq ($(MAKECMDGOALS),$(filter $(MAKECMDGOALS), App App-flash DebugApp DebugApp-flash clean-App clean-DebugApp cppcheck))
+ifeq ($(MAKECMDGOALS),$(filter $(MAKECMDGOALS), App App-flash DebugApp DebugApp-flash clean-App clean-DebugApp static-analisis))
 include Makefiles/main_Makefile
 endif

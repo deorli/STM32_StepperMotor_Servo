@@ -40,9 +40,17 @@ vpath %.c $(sort $(dir $(SOURCES)))
 OBJECTS += $(addprefix $(BUILD_DIR)/,$(notdir $(ASM_SOURCES:.s=.o)))
 vpath %.s $(sort $(dir $(ASM_SOURCES)))
 
+EXCLUDE_OPTS := $(foreach dir,$(EXCLUDED_DIRS),-path $(dir) -prune -o)
+
+HEADERS_WITH_DIR :=$(shell \
+    find $(ROOT_DIR) $(EXCLUDE_OPTS) \
+    -type f -name "*.h" -print)
+
+HEADERS_CPPCHECK := $(subst -I,,$(INCLUDES))
+
 ########################################### ↓ Rules ↓ ##########################################
 # Create an object file from soruce files
-$(BUILD_DIR)/%.o: %.c | $(BUILD_DIR)
+$(BUILD_DIR)/%.o: %.c $(HEADERS_WITH_DIR)| $(BUILD_DIR)
 	$(CC) -c $(CFLAGS) -Wa,-a,-ad,-alms=$(BUILD_DIR)/$(notdir $(<:.c=.lst)) $< -o $@
 	@$(eval RECOMPILED_FILES := $(RECOMPILED_FILES) $<)
 
@@ -124,20 +132,35 @@ reset:
 	-f interface/stlink.cfg -f target/stm32f3x.cfg \
 	-c "init" -c "reset" -c "shutdown"
 
-cppcheck: cppcheck-process
-
-# TODO
-#1. Add header files to cppcheck
+static-analisis: cppcheck-process
 
 # Static analysis using cppcheck 
 cppcheck-process: print_cppcheck_start
-	@$(CPPCHECK) \
+	@if [ -z "$(HEADERS_CPPCHECK)" ]; then \
+	    echo "Error: HEADERS_CPPCHECK is empty"; \
+	    exit 1; \
+	fi
+
+	@RESULT_FILE=$$(mktemp /tmp/cppcheck_result.XXXXXX); \
+	$(CPPCHECK) \
 	--platform=win64 \
 	--force \
-	--quiet --enable=all \
+	--quiet \
+	--enable=all \
 	--error-exitcode=1 \
 	--inline-suppr \
 	--suppress=missingIncludeSystem \
-	-I '$(ROOT_DIR)/Core/STM32F303x8' \
-	-I '$(ROOT_DIR)/Core/Inc' \
-	$(SOURCES)
+	$(foreach dir,$(HEADERS_CPPCHECK),-I $(dir)) \
+	$(SOURCES) 2> $$RESULT_FILE; \
+	EXIT_CODE=$$?; \
+	\
+	if [ $$EXIT_CODE -eq 0 ]; then \
+	    echo "Cppcheck: No issues found."; \
+	else \
+	    echo "Cppcheck: Issues found."; \
+		cat $$RESULT_FILE; \
+		ERROR_COUNT=$$(grep -E 'error:|style:' $$RESULT_FILE | sort | uniq | wc -l); \
+	    echo "Number of issues found: $$ERROR_COUNT"; \
+	fi; \
+	
+	@rm -f $$RESULT_FILE

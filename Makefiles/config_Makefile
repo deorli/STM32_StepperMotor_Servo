@@ -15,12 +15,16 @@
 # Absolute path
 ROOT_DIR :=$(realpath $(shell dirname $(firstword $(MAKEFILE_LIST))))
 
+EXCLUDED_DIRS := $(addprefix $(ROOT_DIR)/,Core/STM32F303x8)
+
 RECOMPILED_FILES :=
 
 ################################## ↓ Source and header files ↓ #################################
 SOURCES := 
 INCLUDES := 
-HEADERS := Core/Inc/stm32f3x8.h
+
+HEADERS_CPPCHECK :=
+HEADERS_WITH_DIR :=
 
 ASM_SOURCES :=
 ASM_INCLUDES :=
