@@ -52,7 +52,7 @@ HEADERS_CPPCHECK := $(subst -I,,$(INCLUDES))
 # Create an object file from soruce files
 $(BUILD_DIR)/%.o: %.c $(HEADERS_WITH_DIR)| $(BUILD_DIR)
 	-$(CC) -c $(CFLAGS) -Wa,-a,-ad,-alms=$(BUILD_DIR)/$(notdir $(<:.c=.lst)) $< -o $@ 2>> $(LOG_FILE)
-	@$(eval RECOMPILED_FILES := $(RECOMPILED_FILES) $<)
+	@echo $< >> $(RECOMPILED_FILES)
 
 # Create an object file from ASM files
 $(BUILD_DIR)/%.o: %.s Makefile | $(BUILD_DIR)
@@ -73,9 +73,6 @@ $(BUILD_DIR)/%.bin: $(BUILD_DIR)/%.elf | $(BUILD_DIR)
 
 $(BUILD_DIR):
 	mkdir $@
-
-set-build-ok:
-	$(eval BUILD_OK := True)
 
 # Headers
 print_compilation_start: 
@@ -99,21 +96,22 @@ print_cppcheck_start:
 clean-App clean-DebugApp: print_clean_start
 	-rm -fR $(BUILD_DIR)
 
-# Deletion of compilation log file
-clean-log-file:
+# Deleting auxiliary compilation log files
+clean-log-files:
 	@rm -f ./*.log
 
+
 # Application compilation without and with debugging information
-App DebugApp: clean-log-file print_compilation_start $(BUILD_DIR)/$(TARGET).elf $(BUILD_DIR)/$(TARGET).bin
+App DebugApp: clean-log-files print_compilation_start $(BUILD_DIR)/$(TARGET).elf $(BUILD_DIR)/$(TARGET).bin
 #	Check and print information on which files have been compiled/recompiled
-	@if [ -z "$(RECOMPILED_FILES)" ]; then \
-		echo "$(GREEN)All files are up to date$(RESET)"; \
-	else \
+	@if [ -s "$(RECOMPILED_FILES)" ]; then \
 		echo ""; \
 		echo "$(BLUE)Compiled files:$(RESET)"; \
 		echo "$(BLUE)---------------------------------------------------------------------------------$(RESET)"; \
-		$(foreach file,$(RECOMPILED_FILES), echo "                  $(file)";) \
+		cat $(RECOMPILED_FILES); \
 		echo "$(BLUE)---------------------------------------------------------------------------------$(RESET)"; \
+	else \
+		echo "$(GREEN)All files are up to date$(RESET)"; \
 	fi;
 #	Compilation report
 	@if [ -s "$(LOG_FILE)" ]; then \
@@ -126,20 +124,22 @@ App DebugApp: clean-log-file print_compilation_start $(BUILD_DIR)/$(TARGET).elf 
 		echo "$(RED)Number of issues found: $$ERROR_COUNT$(RESET)"; \
 	else \
 		echo "$(GREEN)Compilation: SUCCESS$(RESET)"; \
-		$(eval BUILD_OK := True) \
 	fi;
-	
+
 # Flash application without debugging information
-App-flash: clean-App App 
-ifeq ($(BUILD_OK), true)
-    flash-process reset
-endif
+App-flash: App flash-reset
 
 # Flash application with debugging information
-flash-debug: clean-DebugApp debug
-ifeq ($(BUILD_OK), true)
-    flash-process reset
-endif
+DebugApp-flash: DebugApp flash-reset
+
+# Flashing and resetting the microcontroller
+flash-reset:
+# 	Check the compilation error file for an empty file
+	@if [ -s "$(LOG_FILE)" ]; then \
+		echo "$(RED)Skip flashing$(RESET)"; \
+	else \
+		$(MAKE) -f Makefiles/main_Makefile flash-process reset; \
+	fi
 
 # Flash process
 flash-process: print_flash_start

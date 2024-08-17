@@ -25,11 +25,12 @@ ROOT_DIR :=$(realpath $(shell dirname $(firstword $(MAKEFILE_LIST))))
 
 EXCLUDED_DIRS := $(addprefix $(ROOT_DIR)/,Core/STM32F303x8)
 
-RECOMPILED_FILES :=
+RECOMPILED_FILES := ./recompiled_files.log
 
 LOG_FILE = ./build.log
 
-BUILD_OK := False
+# Automatically apply additional flags each time make is called
+MAKEFLAGS += --no-print-directory
 
 ################################## ↓ Source and header files ↓ #################################
 SOURCES := 
