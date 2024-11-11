@@ -1,40 +1,37 @@
 ################################################################################################
-#   File           : config_Makefile
-#   Brief          : This file contains configuration for software building
-#					 with flashing process for SMT32F303K8 microcontroller
-#	############################################################################################
-#   Copyright (c) Bator Mateusz 
+#   File           : Makefile (config)
+#   Description    : This file contains configuration for software building
+#                    with flashing process for SMT32F303K8 microcontroller
+#   ############################################################################################
+#   Copyright (c) Bator Mateusz
 #   email: deorli@o2.pl
-#   
+#
 #   All rights reserved.
-#   
+#
 #   This software is licensed under terms that can be found in the LICENSE file
 #   in the root directory of this software project.
 ################################################################################################
-
-# Text colour variables
-RED := $(shell tput -Txterm setaf 1)
-GREEN := $(shell tput -Txterm setaf 2)
-BLUE := $(shell tput -Txterm setaf 4)
-CYAN := $(shell tput -Txterm setaf 6)
-WHITE := $(shell tput -Txterm setaf 7)
-RESET := $(shell tput -Txterm sgr0)
+#
+# Section: Includes
+# **********************************************************************************************
+include Makefiles/color_console
 
 # Absolute path
 ROOT_DIR :=$(realpath $(shell dirname $(firstword $(MAKEFILE_LIST))))
 
 EXCLUDED_DIRS := $(addprefix $(ROOT_DIR)/,Core/STM32F303x8)
 
-RECOMPILED_FILES := ./recompiled_files.log
-
-LOG_FILE = ./build.log
+CURRENT_WARNING_ERROR 		= ./warning_error.log
+LOG_FILE_COMPILATION		= ./build_compilation.log
+LOG_FILE_LINKING			= ./build_linking.log
+LOG_FILE_HEX_BIN			= ./build_hex_bin.log
 
 # Automatically apply additional flags each time make is called
-MAKEFLAGS += --no-print-directory
+MAKEFLAGS += --no-print-directory --keep-going
 
 ################################## ↓ Source and header files ↓ #################################
-SOURCES := 
-INCLUDES := 
+SOURCES :=
+INCLUDES :=
 
 HEADERS_CPPCHECK :=
 HEADERS_WITH_DIR :=
@@ -47,13 +44,12 @@ EXTERNAL_INCLUDE_DIRS = \
 'C:\Program Files (x86)\GNU Arm Embedded Toolchain\10 2021.10\arm-none-eabi\include'
 
 ########################################## ↓ Defines ↓ #########################################
-C_DEFS = 
+C_DEFS =
 
 AS_DEFS =
 
 ####################################### ↓ Compile flags ↓ ######################################
-# Optimization
-OPT = -Og
+OPT = -O3
 
 # CPPCHECK
 CPPCHECK = cppcheck
@@ -69,18 +65,23 @@ FLOAT-ABI = -mfloat-abi=hard
 
 MCU = $(CPU) -mthumb $(FPU) $(FLOAT-ABI)
 
-CFLAGS = $(MCU) $(C_DEFS) $(INCLUDES) -I $(OPT) -Wall -Wextra -g -fdata-sections -ffunction-sections
+CFLAGS = $(MCU) $(C_DEFS) $(INCLUDES) -I $(OPT) -Wall -Wextra -Wunused -Wunused-variable -fdata-sections -ffunction-sections
 
 # Generate dependency information
 CFLAGS += -MMD -MP -MF"$(@:%.o=%.d)"
 
-ASFLAGS = $(MCU) $(AS_DEFS) $(ASM_INCLUDES) $(OPT) -Wall -fdata-sections -ffunction-sections
+# Forces the compiler to output color codes
+CFLAGS += -fdiagnostics-color=always
+
+ASFLAGS = $(MCU) $(AS_DEFS) $(ASM_INCLUDES) -Wall -fdata-sections -ffunction-sections
 
 # LD Flags
-LIBS = -lc -lm -lnosys 
-LIBDIR = 
-LDFLAGS = $(MCU) -specs=nano.specs -T$(LDSCRIPT) $(LIBDIR) $(LIBS)
+LIBS = -lc -lm -lnosys
+LIBDIR =
+LDFLAGS = $(MCU) -Wl,--fatal-warnings -specs=nano.specs -T $(LDSCRIPT) $(LIBDIR) $(LIBS)
 
+
+DD = @-
 ########################################## ↓ Binaries ↓ ########################################
 PREFIX = arm-none-eabi-
 # The gcc compiler bin path can be either defined in make command

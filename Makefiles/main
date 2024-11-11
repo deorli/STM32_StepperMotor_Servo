@@ -1,0 +1,344 @@
+################################################################################################
+#   File           : Makefile (main)
+#   Description    : System Makefile for building, flashing, and static analysis of
+#                    the STM32F3 microcontroller project.
+#                    Includes configurable options for debugging and flash targets.
+################################################################################################
+#   Copyright (c) Mateusz Bator
+#   Email         : deorli@o2.pl
+#
+#   All rights reserved.
+#
+#   This software is licensed under terms available in the LICENSE file
+#   in the root directory of this software project.
+################################################################################################
+#
+# Section: Includes
+# **********************************************************************************************
+include Makefiles/config
+include Core/Makefile
+
+#
+# Section: Variables
+# **********************************************************************************************
+# Application name
+TARGET        = stepper_servo
+BUILD_DIR     = .build
+
+ERROR_COUNT := 0
+WARNING_COUNT := 0
+
+COMPILATION_SUCCESS := 0
+LINKING_SUCCESS := 0
+
+# Generate object file lists
+OBJECTS       = $(addprefix $(BUILD_DIR)/,$(notdir $(SOURCES:.c=.o)))
+ASM_OBJECTS   = $(addprefix $(BUILD_DIR)/,$(notdir $(ASM_SOURCES:.s=.o)))
+OBJECTS      += $(ASM_OBJECTS)
+vpath %.c $(sort $(dir $(SOURCES)))
+vpath %.s $(sort $(dir $(ASM_SOURCES)))
+
+# Header files for static analysis
+EXCLUDE_OPTS      := $(foreach dir,$(EXCLUDED_DIRS),-path $(dir) -prune -o)
+HEADERS_WITH_DIR  := $(shell find $(ROOT_DIR) $(EXCLUDE_OPTS) -type f -name "*.h" -print)
+HEADERS_CPPCHECK  := $(subst -I,,$(INCLUDES))
+
+#
+# Section: Flags
+# **********************************************************************************************
+DEBUG ?= 0
+
+ifeq ($(DEBUG), 1)
+    CFLAGS += -g -gdwarf-2      # Debug mode: include debug symbols and no optimization
+endif
+
+#
+# Section: Rules
+# **********************************************************************************************
+# Create object files from source files
+create_object_files: print_compilation_start $(OBJECTS) Makefile
+
+$(BUILD_DIR)/%.o: %.c $(HEADERS_WITH_DIR) | $(BUILD_DIR)
+	@-$(CC) -c $(CFLAGS) -Wa,-a,-ad,-alms=$(BUILD_DIR)/$(notdir $(<:.c=.lst)) $< -o $@ 2>&1 | tee -a $(CURRENT_WARNING_ERROR)
+	@$(MAKE) -f Makefiles/main check_compilation_result file_name=$<
+
+$(BUILD_DIR)/%.o: %.s Makefile | $(BUILD_DIR)
+	@$(AS) -c $(CFLAGS) $< -o $@ 2>&1 | tee -a $(CURRENT_WARNING_ERROR)
+	@$(MAKE) -f Makefiles/main check_compilation_result file_name=$<
+
+# Link object files into an ELF file
+create_elf_file: print_linking_start
+	@if [ -s "$(LOG_FILE_COMPILATION)" ] && grep -q "error" $(LOG_FILE_COMPILATION); then \
+		echo "$(RED)Errors detected, stopping build$(RESET)"; \
+		echo ""; \
+		exit 1; \
+	else \
+		$(CC) $(OBJECTS) $(LDFLAGS) -o $(BUILD_DIR)/$(TARGET).elf 2>&1 | tee -a $(CURRENT_WARNING_ERROR) | \
+		grep --color=always -E "error|warning" || true; \
+		$(SZ) $(BUILD_DIR)/$(TARGET).elf || true; \
+	fi;
+	@$(MAKE) -f Makefiles/main check_linking_result file_name="$(BUILD_DIR)/$(TARGET).elf"
+
+# Convert ELF file to HEX and BIN format
+create_hex_bin_file: print_create_hex_bin_start $(BUILD_DIR)/$(TARGET).hex $(BUILD_DIR)/$(TARGET).bin
+
+# Rule to create HEX file from ELF
+$(BUILD_DIR)/$(TARGET).hex:
+	@if [ -s "$(LOG_FILE_LINKING)" ] && grep -q "error" "$(LOG_FILE_LINKING)" || \
+	[ -s "$(LOG_FILE_COMPILATION)" ] && grep -q "error" "$(LOG_FILE_COMPILATION)"; then \
+		echo "$(RED)Errors detected, stopping build .hex file$(RESET)"; \
+	else \
+		$(HEX) $(BUILD_DIR)/$(TARGET).elf $@ 2>&1 | tee -a $(CURRENT_WARNING_ERROR) | \
+		grep --color=always -E "error|warning" || true; \
+		$(MAKE) -f Makefiles/main check_create_hex_bin_result file_name=$@; \
+	fi;
+
+# Rule to create BIN file from ELF
+$(BUILD_DIR)/$(TARGET).bin:
+	@if [ -s "$(LOG_FILE_LINKING)" ] && grep -q "error" "$(LOG_FILE_LINKING)" || \
+	[ -s "$(LOG_FILE_COMPILATION)" ] && grep -q "error" "$(LOG_FILE_COMPILATION)"; then \
+		echo "$(RED)Errors detected, stopping build .bin file$(RESET)"; \
+	else \
+		$(BIN) $(BUILD_DIR)/$(TARGET).elf $@ 2>&1 | tee -a $(CURRENT_WARNING_ERROR) | \
+		grep --color=always -E "error|warning" || true; \
+		$(MAKE) -f Makefiles/main check_create_hex_bin_result file_name=$@; \
+	fi;
+
+# Create build directory if it does not exist
+$(BUILD_DIR):
+	@mkdir $@
+
+#
+# Section: Custom Functions
+# **********************************************************************************************
+define add_warning_error_to_build_log_file
+	@cat $(CURRENT_WARNING_ERROR) >> $(LOG_FILE)
+	@-rm -fR $(CURRENT_WARNING_ERROR)
+endef
+
+# define clean_log_files:
+# 	@echo '$(CYAN)CLEAN LOG FILES$(RESET)'
+# 	@rm -f ./*.log
+# endef
+
+define print_message
+	@echo ""
+	@echo "$(CYAN)# --> $(1) $(RESET)"
+	@echo "$(CYAN)#################################################################################$(RESET)"
+endef
+
+# define build_final_file:
+# 	@echo '$(CYAN)CLEAN LOG FILES$(RESET)'
+# 	@rm -f ./*.log
+# endef
+
+# Headers for start of compilation, cleaning, and flashing processes
+print_clean_start:
+	$(call print_message,CLEAN BUILD)
+
+print_compilation_start:
+	$(call print_message,COMPILATION PROCESS START)
+
+print_linking_start:
+	$(call print_message,LINKLING PROCESS START)
+
+print_create_hex_bin_start:
+	$(call print_message,CREATE HEX BIN START)
+
+print_summary_start:
+	$(call print_message,SUMMARY START)
+
+print_flash_start:
+	$(call print_message,FLASHING PROCESS START)
+
+print_cppcheck_start:
+	$(call print_message,STATIC ANALYSIS)
+
+extract_warnings = $(shell grep "warning" build.log | sed 's/^\([^:]*\):.*/\1/')
+#
+# Section: Main Targets
+# **********************************************************************************************
+# Compile application
+App: \
+	clean-log-files \
+	clean-build \
+	create_object_files \
+	create_elf_file \
+	create_hex_bin_file \
+	print_summary
+
+check_compilation_result:
+	@if [ -s "$(CURRENT_WARNING_ERROR)" ]; then \
+		error_count=$$(grep -ci "error" $(CURRENT_WARNING_ERROR)); \
+		warning_count=$$(grep -ci "warning" $(CURRENT_WARNING_ERROR)); \
+		if [ $$error_count -gt 0 ] && [ $$warning_count -gt 0 ]; then \
+			echo -e "$(RED)ERROR$(RESET) & $(ORANGE)WARNING$(RESET): $(file_name)"; \
+		elif [ $$error_count -gt 0 ]; then \
+			echo -e "$(RED)ERROR$(RESET): $(file_name)"; \
+		elif [ $$warning_count -gt 0 ]; then \
+			echo -e "$(ORANGE)WARNING$(RESET): $(file_name)"; \
+		fi; \
+		cat $(CURRENT_WARNING_ERROR) >> $(LOG_FILE_COMPILATION); \
+	else \
+		echo -e "$(GREEN)SUCCESS$(RESET): $(file_name)"; \
+	fi;
+	@rm -f $(CURRENT_WARNING_ERROR); \
+
+check_linking_result:
+	@if [ -s "$(CURRENT_WARNING_ERROR)" ]; then \
+		error_count=$$(grep -ci "error" $(CURRENT_WARNING_ERROR)); \
+		if [ $$error_count -gt 0 ]; then \
+			echo ""; \
+			echo -e "$(RED)ERRORS$(RESET):"; \
+		elif [ $$warning_count -gt 0 ]; then \
+			echo -e "$(ORANGE)WARNING$(RESET):"; \
+		fi; \
+		cat $(CURRENT_WARNING_ERROR) | tee -a $(LOG_FILE_LINKING); \
+	else \
+		echo -e "$(GREEN)SUCCESS$(RESET): $(file_name)"; \
+	fi;
+	@rm -f $(CURRENT_WARNING_ERROR); \
+
+check_create_hex_bin_result:
+	@if [ -s "$(CURRENT_WARNING_ERROR)" ]; then \
+		error_count=$$(grep -ci "error" $(CURRENT_WARNING_ERROR)); \
+		if [ $$error_count -gt 0 ]; then \
+			echo ""; \
+			echo -e "$(RED)ERRORS$(RESET):"; \
+		fi; \
+		cat $(CURRENT_WARNING_ERROR) | tee -a $(LOG_FILE_HEX_BIN); \
+	else \
+		echo -e "$(GREEN)SUCCESS$(RESET): $(file_name)"; \
+	fi;
+	@rm -f $(CURRENT_WARNING_ERROR); \
+
+print_summary: print_summary_start
+	@if [ -s "$(LOG_FILE_COMPILATION)" ]; then \
+		error_count=$$(grep -ci "error" $(LOG_FILE_COMPILATION)); \
+		warning_count=$$(grep -ci "warning" $(LOG_FILE_COMPILATION)); \
+		if [ $$error_count -gt 0 ] && [ $$warning_count -gt 0 ]; then \
+			echo -e "Compilation: $(RED)errors = $$error_count, warnings = $$warning_count $(RESET)"; \
+		elif [ $$error_count -gt 0 ]; then \
+			echo -e "Compilation: $(RED)errors = $$error_count$(RESET)"; \
+		elif [ $$warning_count -gt 0 ]; then \
+			echo -e "Compilation: $(ORANGE)OK -> warnings = $$warning_count$(RESET)"; \
+		fi; \
+	else \
+		echo -e "Compilation: $(GREEN)SUCCESS$(RESET)"; \
+	fi;
+
+	@if [ -s "$(LOG_FILE_LINKING)" ]; then \
+		error_count=$$(grep -ci "error" $(LOG_FILE_LINKING)); \
+		warning_count=$$(grep -ci "warning" $(LOG_FILE_LINKING)); \
+		if [ $$error_count -gt 0 ] && [ $$warning_count -gt 0 ]; then \
+			echo -e "Linking:$(RED) errors = $$error_count, warnings = $$warning_count $(RESET)"; \
+		elif [ $$error_count -gt 0 ]; then \
+			echo -e "Linking: $(RED)errors = $$error_count$(RESET)"; \
+		elif [ $$warning_count -gt 0 ]; then \
+			echo -e "Linking: $(ORANGE)OK -> warnings = $$warning_count$(RESET)"; \
+		fi; \
+	else \
+		echo -e "Linking: $(GREEN)SUCCESS$(RESET)"; \
+	fi;
+
+	@if [ -s "$(LOG_FILE_HEX_BIN)" ]; then \
+		error_count=$$(grep -ci "error" $(LOG_FILE_HEX_BIN)); \
+		warning_count=$$(grep -ci "warning" $(LOG_FILE_HEX_BIN)); \
+		if [ $$error_count -gt 0 ] && [ $$warning_count -gt 0 ]; then \
+			echo -e "Creating hex/bin: $(RED)errors = $$error_count, warnings = $$warning_count $(RESET)"; \
+		elif [ $$error_count -gt 0 ]; then \
+			echo -e "Creating hex/bin: $(RED)errors = $$error_count$(RESET)"; \
+		elif [ $$warning_count -gt 0 ]; then \
+			echo -e "Creating hex/bin: $(ORANGE)OK -> warnings = $$warning_count$(RESET)"; \
+		fi; \
+	else \
+		echo -e "Creating hex/bin: $(GREEN)SUCCESS$(RESET)"; \
+	fi;
+
+# Flash the application to the microcontroller only if no compilation errors are present
+App-flash: App flash-reset
+
+# Clean build directories and logs
+clean-build:
+	@-rm -fR $(BUILD_DIR)
+
+clean-log-files:
+	@rm -f ./*.log
+
+flash-reset: print_flash_start
+	@if [ -s "$(LOG_FILE_COMPILATION)" ]; then \
+		error_count=$$(grep -ci "error" $(LOG_FILE_COMPILATION)); \
+		if [ $$error_count -gt 0 ]; then \
+			echo "$(RED)Skip flashing due to compilation errors$(RESET)"; \
+			echo ""; \
+			exit 1; \
+		fi; \
+	fi;
+	@if [ -s "$(LOG_FILE_LINKING)" ]; then \
+		echo "$(RED)Skip flashing due to compilation errors$(RESET)"; \
+		echo ""; \
+		exit 1; \
+	fi;
+	@if [ -s "$(LOG_FILE_HEX_BIN)" ]; then \
+		echo "$(RED)Skip flashing due to compilation errors$(RESET)"; \
+		echo ""; \
+		exit 1; \
+	fi;
+	@$(MAKE) -f Makefiles/main flash-process reset; \
+
+flash-process:
+	@if openocd -f interface/stlink.cfg -f target/stm32f3x.cfg \
+		-c "init" -c "reset halt" \
+		-c "flash write_image erase $(BUILD_DIR)/$(TARGET).bin 0x08000000" \
+		-c "verify_image $(BUILD_DIR)/$(TARGET).bin" -c "reset" -c "shutdown"; then \
+		echo "$(BLUE)---------------------------------------------------------------------------------$(RESET)"; \
+		echo "$(GREEN)Microcontroller flashing: SUCCESS$(RESET)"; \
+	else \
+		echo "$(RED)Microcontroller flashing: FAIL$(RESET)"; \
+	fi
+
+# Reset microcontroller
+reset:
+	@echo "";
+	@if openocd -f interface/stlink.cfg -f target/stm32f3x.cfg \
+		-c "init" -c "reset" -c "shutdown"; then \
+		echo "$(BLUE)---------------------------------------------------------------------------------$(RESET)"; \
+		echo "$(GREEN)Microcontroller reset: SUCCESS$(RESET)"; \
+	else \
+		echo "$(RED)Microcontroller reset: FAIL$(RESET)"; \
+	fi
+
+# Static analysis using cppcheck
+static-analisis: cppcheck-process
+
+cppcheck-process: print_cppcheck_start
+	@if [ -z "$(HEADERS_CPPCHECK)" ]; then \
+	    echo "$(RED)Error: HEADERS_CPPCHECK is empty$(RESET)"; \
+	fi
+	@RESULT_FILE=$$(mktemp /tmp/cppcheck_result.XXXXXX); \
+	$(CPPCHECK) \
+		--platform=win64 \
+		--force \
+		--quiet \
+		--enable=all \
+		--error-exitcode=1 \
+		--inline-suppr \
+		--suppress=missingIncludeSystem \
+		$(foreach dir,$(HEADERS_CPPCHECK),-I $(dir)) \
+		$(SOURCES) 2> $$RESULT_FILE; \
+	EXIT_CODE=$$?; \
+	if [ "$$EXIT_CODE" -eq 0 ]; then \
+	    echo "$(GREEN)Cppcheck: SUCCESS$(RESET)"; \
+	else \
+	    echo "$(RED)Cppcheck: FAIL$(RESET)"; \
+		echo "$(RED)---------------------------------------------------------------------------------$(RESET)"; \
+		if [ -f $$RESULT_FILE ]; then \
+			cat $$RESULT_FILE; \
+			ERROR_COUNT=$$(grep -E 'error:|style:' $$RESULT_FILE | sort | uniq | wc -l); \
+			echo "$(RED)Number of issues found: $$ERROR_COUNT$(RESET)"; \
+		else \
+			echo "$(RED)Result file not found or empty$(RESET)"; \
+		fi; \
+		echo "$(RED)---------------------------------------------------------------------------------$(RESET)"; \
+	fi; \
+	rm -f $$RESULT_FILE

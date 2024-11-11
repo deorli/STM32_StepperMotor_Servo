@@ -1,0 +1,22 @@
+################################################################################################
+#   File           : Makefile (color_console)
+#   Description    : The file includes settings for color-coded console output
+#					 to improve readability.
+#   ############################################################################################
+#   Copyright (c) Bator Mateusz
+#   email: deorli@o2.pl
+#
+#   All rights reserved.
+#
+#   This software is licensed under terms that can be found in the LICENSE file
+#   in the root directory of this software project.
+################################################################################################
+
+# Text colour variables
+RED := $(shell tput -Txterm setaf 1)
+GREEN := $(shell tput -Txterm setaf 2)
+BLUE := $(shell tput -Txterm setaf 4)
+CYAN := $(shell tput -Txterm setaf 6)
+WHITE := $(shell tput -Txterm setaf 7)
+ORANGE := $(shell tput setaf 214)
+RESET := $(shell tput -Txterm sgr0)
